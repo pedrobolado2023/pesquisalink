@@ -62,6 +62,40 @@ function mergeCookies(oldCookieString, setCookieArray) {
     return Object.keys(cookieMap).map(key => `${key}=${cookieMap[key]}`).join('; ');
 }
 
+function isRelevantProduct(productName, searchKeyword) {
+    if (!productName || !searchKeyword) return true;
+    
+    const nameLower = productName.toLowerCase();
+    const keywordLower = searchKeyword.toLowerCase();
+    
+    const negativeWords = ['capa', 'capinha', 'case', 'pelicula', 'película', 'cabo', 'carregador', 'suporte', 'pulseira', 'caixa vazia', 'cinta', 'tampa'];
+    
+    // Se a busca original já for por um acessório, ignoramos o filtro negativo
+    const userSearchedForAccessory = negativeWords.some(word => keywordLower.includes(word));
+    
+    if (!userSearchedForAccessory) {
+        const hasNegativeWord = negativeWords.some(word => {
+            const regex = new RegExp(`\\b${word}\\b`, 'i');
+            return regex.test(nameLower);
+        });
+        if (hasNegativeWord) return false;
+    }
+    
+    // Validação de match das palavras da busca
+    const keywordTokens = keywordLower.split(/\s+/).filter(w => w.length > 1 && w !== 'de' && w !== 'para');
+    if (keywordTokens.length > 0) {
+        let matchCount = 0;
+        for (const token of keywordTokens) {
+            if (nameLower.includes(token)) matchCount++;
+        }
+        // Se a busca tem múltiplas palavras e quase nenhuma aparece no título, bloqueamos
+        if (matchCount < Math.ceil(keywordTokens.length * 0.5)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // ===== API ENDPOINT =====
 app.post('/api/analyze-link', async (req, res) => {
     const { url } = req.body;
@@ -124,10 +158,12 @@ async function searchShopee(keyword) {
             timeout: 10000
         });
 
-        return (response.data?.data?.productOfferV2?.nodes || []).map(p => ({
-            name: p.productName, price: parseFloat(p.price) || 0, image: p.imageUrl,
-            link: p.offerLink, source: 'Shopee', sales: '💎 Afiliado'
-        }));
+        return (response.data?.data?.productOfferV2?.nodes || [])
+            .filter(p => isRelevantProduct(p.productName, keyword))
+            .map(p => ({
+                name: p.productName, price: parseFloat(p.price) || 0, image: p.imageUrl,
+                link: p.offerLink, source: 'Shopee', sales: '💎 Afiliado'
+            }));
     } catch (e) { return []; }
 }
 
@@ -160,6 +196,8 @@ async function searchShein(keyword) {
         const converted = [];
 
         for (const p of list) {
+            if (!isRelevantProduct(p.goodsName, keyword)) continue;
+            
             try {
                 const genPayload = {
                     "abtVersion": 1, "activityId": 20, "goodsId": parseInt(p.goodsId),
@@ -217,7 +255,7 @@ async function searchAmazon(keyword) {
             const image = $el.find('img.s-image').attr('src');
             const asin = $el.attr('data-asin');
 
-            if (name && price > 0 && asin) {
+            if (name && price > 0 && asin && isRelevantProduct(name, keyword)) {
                 const longUrl = `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_CREDENTIALS.tag}`;
                 let finalLink = longUrl;
 
@@ -253,7 +291,7 @@ async function searchMercadoLivre(keyword) {
             const price = parseFloat($el.find('.andes-money-amount__fraction').first().text().replace(/[^0-9]/g, '')) || 0;
             const image = $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src');
             let link = $el.find('a').first().attr('href');
-            if (name && price > 0 && link && !seenNames.has(name)) {
+            if (name && price > 0 && link && !seenNames.has(name) && isRelevantProduct(name, keyword)) {
                 seenNames.add(name);
                 if (!link.startsWith('http')) link = 'https://www.mercadolivre.com.br' + link;
                 raw.push({ name, price, image, link });
