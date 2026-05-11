@@ -122,9 +122,14 @@ app.post('/api/analyze-link', async (req, res) => {
         results.forEach((res, index) => {
             const name = platforms[index].name;
             if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
-                finalProducts.push(...res.value);
-                stats[name.toLowerCase().replace(' ', '')] = res.value.length;
-                console.log(`✅ ${name}: ${res.value.length} ofertas (Premium Tracking)`);
+                const affiliateProducts = res.value.filter(p => !p.sales.includes('Direto'));
+                if (affiliateProducts.length > 0) {
+                    finalProducts.push(...affiliateProducts);
+                    stats[name.toLowerCase().replace(' ', '')] = affiliateProducts.length;
+                    console.log(`✅ ${name}: ${affiliateProducts.length} ofertas (Premium Tracking)`);
+                } else {
+                    console.log(`⚠️ ${name}: Sem resultados após filtrar diretos.`);
+                }
             } else {
                 console.log(`⚠️ ${name}: Sem resultados.`);
             }
