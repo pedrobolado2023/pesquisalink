@@ -245,6 +245,7 @@ async function searchMercadoLivre(keyword) {
         });
         const $ = cheerio.load(data);
         const raw = [];
+        const seenNames = new Set();
         $('.poly-card, .ui-search-layout__item').each((i, el) => {
             if (raw.length >= 10) return false;
             const $el = $(el);
@@ -252,7 +253,8 @@ async function searchMercadoLivre(keyword) {
             const price = parseFloat($el.find('.andes-money-amount__fraction').first().text().replace(/[^0-9]/g, '')) || 0;
             const image = $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src');
             let link = $el.find('a').first().attr('href');
-            if (name && price > 0 && link) {
+            if (name && price > 0 && link && !seenNames.has(name)) {
+                seenNames.add(name);
                 if (!link.startsWith('http')) link = 'https://www.mercadolivre.com.br' + link;
                 raw.push({ name, price, image, link });
             }
