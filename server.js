@@ -292,6 +292,10 @@ async function searchMercadoLivre(keyword) {
             const price = parseFloat($el.find('.andes-money-amount__fraction').first().text().replace(/[^0-9]/g, '')) || 0;
             const image = $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src');
             let link = $el.find('a').first().attr('href');
+            
+            // Pular anúncios patrocinados (click1) pois a API de afiliados recusa esses links
+            if (link && link.includes('click1.mercadolivre')) return true;
+
             if (name && price > 0 && link && !seenNames.has(name) && isRelevantProduct(name, keyword)) {
                 seenNames.add(name);
                 if (!link.startsWith('http')) link = 'https://www.mercadolivre.com.br' + link;
@@ -326,35 +330,44 @@ async function searchMercadoLivre(keyword) {
             if (setCookie) cookies = mergeCookies(cookies, setCookie);
         } catch (e) { /* silent */ }
 
-        for (const p of raw) {
-            try {
-                const cleanUrl = p.link.split('?')[0].split('#')[0];
-                const csrfToken = ML_CREDENTIALS.csrfToken || cookies.match(/_csrf=([^;]+)/)?.[1] || '';
+        const cleanUrls = raw.map(p => p.link.split('?')[0].split('#')[0]);
+        const csrfToken = ML_CREDENTIALS.csrfToken || cookies.match(/_csrf=([^;]+)/)?.[1] || '';
 
+        try {
+            if (cleanUrls.length > 0) {
                 const affRes = await axios.post('https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink',
-                    { urls: [cleanUrl], tag: ML_CREDENTIALS.tag },
+                    { urls: cleanUrls, tag: ML_CREDENTIALS.tag },
                     {
                         headers: { ...headers, 'cookie': cookies, 'x-csrf-token': csrfToken },
-                        timeout: 5000
+                        timeout: 8000
                     }
                 );
 
-                // Pegar cookies novos se houver (para manter a sessão viva)
                 const setCookie = affRes.headers['set-cookie'];
                 if (setCookie) cookies = mergeCookies(cookies, setCookie);
 
-                const item = affRes.data?.urls?.[0];
-                const affLink = item?.short_url || item?.url;
+                const items = affRes.data?.urls || [];
+                
+                for (let i = 0; i < raw.length; i++) {
+                    const p = raw[i];
+                    // Busca pelo item correspondente no array retornado ou usa a mesma ordem
+                    const item = items.find(it => p.link.includes(it.original_url || it.url)) || items[i];
+                    const affLink = item?.short_url || item?.url;
 
-                converted.push({
-                    ...p, link: affLink || p.link,
-                    source: 'Mercado Livre',
-                    sales: (affLink && (affLink.includes('/sec/') || affLink.includes('/social/') || affLink.includes('meli.la'))) ? '🔥 Afiliado ML' : '🛒 Direto'
-                });
-            } catch (e) {
+                    converted.push({
+                        ...p, link: affLink || p.link,
+                        source: 'Mercado Livre',
+                        sales: (affLink && (affLink.includes('/sec/') || affLink.includes('/social/') || affLink.includes('meli.la'))) ? '🔥 Afiliado ML' : '🛒 Direto'
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Erro na conversão em lote ML:", e.message);
+            for (const p of raw) {
                 converted.push({ ...p, source: 'Mercado Livre', sales: '🛒 Direto' });
             }
         }
+
         return converted;
     } catch (e) { return []; }
 }
