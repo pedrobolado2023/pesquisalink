@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="DivulgAI Test Lab - Compare preços de produtos em Shopee, Amazon, Mercado Livre e Shein em tempo real.">
+    <title>DivulgAI Test Lab | Comparador de Preços</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <main class="container">
+        <header class="hero">
+            <h1 class="logo">DivulgAI <span>Test Lab</span></h1>
+            <p class="subtitle">Compare preços em tempo real: Shopee · Amazon · Mercado Livre · Shein</p>
+        </header>
+
+        <section class="search-section">
+            <div class="search-card glassy">
+                <div class="input-group">
+                    <div class="input-wrapper">
+                        <i class="ph ph-magnifying-glass" id="inputIcon"></i>
+                        <input type="text" id="linkInput" placeholder="Digite o nome do produto ou cole um link (ex: iPhone 15, tênis nike...)" autocomplete="off">
+                    </div>
+                    <button id="analyzeBtn">
+                        <span class="btn-text"><i class="ph ph-sparkle"></i> Buscar</span>
+                        <div class="loader" id="loader"></div>
+                    </button>
+                </div>
+
+                <!-- Sugestões rápidas -->
+                <div class="quick-tags" id="quickTags">
+                    <span>Populares:</span>
+                    <button class="quick-tag" data-query="iPhone 15">📱 iPhone 15</button>
+                    <button class="quick-tag" data-query="Tênis Nike">👟 Tênis Nike</button>
+                    <button class="quick-tag" data-query="Smart TV 50">📺 Smart TV 50"</button>
+                    <button class="quick-tag" data-query="Fone Bluetooth">🎧 Fone Bluetooth</button>
+                    <button class="quick-tag" data-query="Perfume feminino">🌸 Perfume</button>
+                </div>
+
+                <div class="stats-bar" id="statusBox">
+                    <span class="status-dot green"></span>
+                    <span id="statusMessage">Pronto. Cole um link ou pesquise pelo nome do produto.</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stats de plataforma -->
+        <section class="platform-stats" id="platformStats" style="display:none;">
+            <div class="stat-pill" id="stat-shopee">
+                <span class="stat-icon shopee-color">🛍️</span>
+                <span class="stat-label">Shopee</span>
+                <span class="stat-count" id="count-shopee">0</span>
+            </div>
+            <div class="stat-pill" id="stat-amazon">
+                <span class="stat-icon amazon-color">📦</span>
+                <span class="stat-label">Amazon</span>
+                <span class="stat-count" id="count-amazon">0</span>
+            </div>
+            <div class="stat-pill" id="stat-ml">
+                <span class="stat-icon ml-color">🛒</span>
+                <span class="stat-label">Mercado Livre</span>
+                <span class="stat-count" id="count-ml">0</span>
+            </div>
+            <div class="stat-pill" id="stat-shein">
+                <span class="stat-icon shein-color">✨</span>
+                <span class="stat-label">Shein</span>
+                <span class="stat-count" id="count-shein">0</span>
+            </div>
+        </section>
+
+        <section class="results-section" id="resultsSection" style="display: none;">
+            <div class="original-product glassy" id="originalProductCard">
+                <div class="section-title">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <h3>Produto / Busca Detectada</h3>
+                </div>
+                <div class="product-info">
+                    <img id="origImg" src="" alt="Produto" style="display:none;">
+                    <div class="details">
+                        <h2 id="origTitle">Nome do Produto</h2>
+                        <span class="badge" id="origPlatform">Busca</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="comparison-header">
+                <div class="title-with-icon">
+                    <i class="ph ph-presentation-chart"></i>
+                    <h2>Melhores Ofertas <span id="resultCount"></span></h2>
+                </div>
+                <div class="filters">
+                    <button class="filter-chip active" data-filter="all" id="filterAll">Todos</button>
+                    <button class="filter-chip" data-filter="price">💰 Menor Preço</button>
+                    <button class="filter-chip" data-filter="shopee">🛍️ Shopee</button>
+                    <button class="filter-chip" data-filter="amazon">📦 Amazon</button>
+                    <button class="filter-chip" data-filter="mercado livre">🛒 M. Livre</button>
+                    <button class="filter-chip" data-filter="shein">✨ Shein</button>
+                </div>
+            </div>
+
+            <div class="results-grid" id="comparisonGrid">
+                <!-- Results injected here -->
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>© 2026 DivulgAI Test Lab &mdash; Comparação de preços em tempo real nas 4 maiores plataformas</p>
+        </footer>
+    </main>
+
+    <div id="toast" class="toast">Link copiado!</div>
+
+    <script src="script.js"></script>
+</body>
+</html>
