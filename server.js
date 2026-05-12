@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config(); // Carrega o .env local
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,26 +17,26 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 // ===== CREDENCIAIS E CONFIGURAÇÕES =====
 const SHOPEE_CONFIG = {
-    APP_ID: '18300890048',
-    SECRET: 'THTCKJVZLZCZV77X2S2AW2ULFDW6AZ3F',
+    APP_ID: process.env.SHOPEE_APP_ID || '',
+    SECRET: process.env.SHOPEE_SECRET || '',
     API_URL: 'https://open-api.affiliate.shopee.com.br/graphql'
 };
 
 const ML_CREDENTIALS = {
-    tag: 'hp692480',
-    cookie: `_d2id=ccf977bc-fac6-4d4c-aeb8-18316aa81d83; orgnickp=HP692480; orguseridp=142018015; ftid=GISvwrRP7lLcOqugbEWq0sPZ2SXQN80o-1766577762571; cookiesPreferencesNotLogged=%7B%22categories%22%3A%7B%22advertising%22%3Atrue%2C%22functionality%22%3Anull%2C%22performance%22%3Anull%2C%22traceability%22%3Anull%7D%7D; p_dsid=fe450ffa-4232-4526-a901-9de866639f87-1766577810702; p_edsid=dd8a9be6-645d-4f08-8e1d-2ecaa425a857-1766577810702; g_state={"i_l":0,"i_ll":1770732986558,"i_b":"qyHJBOw8K5qOFUvR36CYApkeCwds5sTBoXuO/O4OmvA","i_e":{"enable_itp_optimization":0}}; ssid=ghy-020916-e1mo4mVTKb32GWK2mqy779sUYmubcG-__-142018015-__-1865363982986--RRR_0-RRR_0; orguserid=d0TZZHd07d09; _csrf=WatuolyoF3PIvUGogd27ePbc; cookiesPreferencesLoggedFallback=%7B%22userId%22%3A142018015%2C%22categories%22%3A%7B%22advertising%22%3Atrue%2C%22functionality%22%3Anull%2C%22performance%22%3Anull%2C%22traceability%22%3Anull%7D%7D; c_ZxMWlg=1; cp=74952240; ml_cart-quantity=14; _mldataSessionId=c400813f-3a0a-41e1-a350-4b6eb00171c3; cookiesPreferencesLogged=%7B%22userId%22%3A142018015%2C%22categories%22%3A%7B%22advertising%22%3Atrue%2C%22functionality%22%3Anull%2C%22performance%22%3Anull%2C%22traceability%22%3Anull%7D%7D; hide-cookie-banner=142018015-COOKIE_PREFERENCES_ALREADY_SET; nsa_rotok=eyJhbGciOiJSUzI1NiIsImtpZCI6IjMiLCJ0eXAiOiJKV1QifQ.eyJpZGVudGlmaWVyIjoiNjQ5OWE5YTktMzNkZS00NWU1LWIxNzYtOTRjYjQzNWE4YWMxIiwicm90YXRpb25faWQiOiJjYWYwMmU5MS03NDM2LTRlMTAtOWZmZC03MDk4MDJiNjkyZjYiLCJwbGF0Zm9ybSI6Ik1MIiwicm90YXRpb25fZGF0ZSI6MTc3ODUzOTg2OCwiZXhwIjoxNzgxMTMxMjY4LCJqdGkiOiIzODkwNjgzNS1lODliLTQwODQtYTUwZC1iZDNhYzJkMzMzZTkiLCJpYXQiOjE3Nzg1MzkyNjgsInN1YiI6IjY0OTlhOWE5LTMzZGUtNDVlNS1iMTc2LTk0Y2I0MzVhOGFjMSJ9.ACfTm-hWF8ztKM_qgIaLpHDEARg4kIf6Si6EmvvZKz2J__i79-0sfZCbzt7j0GO8MySFdeMF033OwwmJ2TUb8nTqdhsTaqswrFOXUzdI-JPq5OZVmmxoZ_8kIsMUzCQaSfqt1HugPwZBSwEYlmQeTUb8JU4aUiVv53dlZ_5RBiHs61ZZ8N2RSq44bX4UY0OUYOeuobRgS5IlRJRpCnQQbMyKNMP0oLHLopv6vlRFL97s6W92nXk4svIQ36-EBgnDuUNrrtOoK4iscTBp_E_ib_pzw8bVOHih59Dbv8VV3DYT9oG2HWfoUNwOhin_RxX-0khePz59TWRaA26jdBA83w`,
-    csrfToken: 'MQz2yGHp-Rp0sTchalaOX8B-GtHQ8C5rJCXA'
+    tag: process.env.ML_TAG || 'hp692480',
+    cookie: process.env.ML_COOKIE || '',
+    csrfToken: process.env.ML_CSRF_TOKEN || ''
 };
 
 const AMAZON_CREDENTIALS = {
-    tag: 'ph17022026-20',
-    cookie: `aws-waf-token=07b8e810-9f09-4256-bdab-0837fa4270e7:EAoAg+WeFekrAAAA:HV59/5SrfR2h2xGeTolLN7QSk2AJQgpcdZ43K2+NhB8IHrmCYJn+QfRuBf0alB1biI9aT/q+yyWHNtwzYv/crHEMQEltlULjozLH2rmBhQGuzQI+/gz0P7InT9h4k+ns5XR7/3yqTdk+ELf41TLNqSrEstuCSf7cyrOReV/asQVacI+sefIGAll0cBzIeuJuqk++1Q==; session-id=141-8521114-5492548; i18n-prefs=BRL; lc-acbbr=pt_BR; ubid-acbbr=131-7665118-9813119; id_pkel=n0; id_pk=eyJuIjoiMCIsImFmIjoiMSIsImNjIjoiMSJ9; sso-state-acbbr=Xdsso|ZQEjgh4UBiggjwXs0WABxNLZlVP5OH2T6xTyPLBXkRT-wyEv-BINPjouE56C_xIFGVDFeliQEOJBIgyKPHVUi89valI2Rk-1hStPZ0dHkulLlAxT; sid=aa6pRqMVgGPY2u1B7aBHPg==|JO565umvXCTWeHn1xtesv2mK+74W/qUZigmyjTQ1n4Y=; at-acbbr=Atza|gQBMqk-iAwEBAEIeNJBelgVs-20uDyHuEwqXoL7HhEJgN2IKN5VTAdioaVwOAo6H7uC2jLBL3pyBVfRLiOnxsaqiIhy9SWcMlwLbAIOOZnlFX3iL-mFFk2nQWzKGdNzxTHr5PkVfrfrBndSnfeKwTIZd3FYqS6QMdpFXF0KV72IKGbFaa486ldwwcs7PFeKJ_1Py0OQdIF9VinYOrHSWWA_-Ieu9xCzNYAzSJQDU1qrgsy0HKBsh3SppHXD9c4cvk0wttt6Tzlx2NtMpl10MdwRvYF2QgwMuM4tin6I1xJ5CmXyOqYqAiDn7L0xRBepz8BOVdqmHBZkxbdBcWkQv-O4EybIgtfxGiY_-yANvCUA_lqUBzf47KLiM5__pa3f6DZeuZNWP2QaSfs5FOkhQAiK6piVwc6Bw8WiqCDG7GD0xsbrRSlXVQuyKHTMljTef; sess-at-acbbr=LFqT1mfebU8C4Yq1cnUpukc61JEf8Jvfu6Ikqm0da1U=; sst-acbbr=Sst1|PQJwhF30clYmfaFaBA2FehcMCUV8bbAglzSUMIjvS9l4-2BwLFf6zjUMxEcfKcuTU5i7NHOp41AwV_BCwNUBYZceQYIIXOaT_VjFpARQ1Q_kEhccD3eGXpxMizGKOI3TU2tgj_SVt2C1E-42GZi84NCpdduaHPMpfawIwqDi9r7-SaQYryv5ECX2ZRo7HwMCtjowE975BjH-B9S6EWYX8tKvnydv67IoPggzq8F3Z3HlKqASkdCIsDgMbOLcyvICAOIurVTbacDqkINUKuzV3bQvx98VavP0g7Yl4ZDr3CpsKp0; x-acbbr="8WiwJ376Xwq0DZGHSqEn?XRbaOa327b@h2yAaUvxeqm?sGGNOy3F8LYfbNqC0aDI"; session-token="kP83o2qyZ1Wu9GsoJUmY/Mg5Y7fOUsdeGWt5/TKbXsCK4GhksQazuZPytRtwoYqf1bqnrAvU7b1u5Xq/UOcGNrzgmR2POCmo16cE2wBxtOJZhC/AfFwRPgk0j4mhV9dKaHUGJfcj3VLHLyyM8HlLHkr9u5H4bPpGaUYLDnRk0jeoETCKU9HAu1soAxyUcoymD4zU1cavqmvNlmULDvJAa5s+YCpwfiiqX26H9m0BMVT0062AyTDcFn1F3HtSRpIj1JD790xMm8c="; session-id-time=2082787201l; rxc=AAclgbXAdV8nDaxAMy8; csm-hit=tb:s-8XKFCGJQHVRRYRQ98AKF|1773355078310&t:1773355078310&adb:adblk_yes`
+    tag: process.env.AMAZON_TAG || 'ph17022026-20',
+    cookie: process.env.AMAZON_COOKIE || ''
 };
 
 const SHEIN_CREDENTIALS = {
-    token: `MDEwMDE.eyJiIjo3LCJnIjoxNzc3MjI2MDM1LCJyIjoiSlNsNkI5IiwidCI6MiwibSI6MzkwNzE0NTYxNSwibCI6MTc3NzIyNjAzNX0.b2b89f9576f46101.3acc2313238404bab9799d258b89d8b369c59f9108274052379bb5789e98785b`,
-    memberId: '3907145615',
-    cookie: `zpnvSrwrNdywdz=center; smidV2=20260316203247d9590fe8293823c030de3c35866891c300d9b8bd5f28c38f0; memberId=3907145615; AT=MDEwMDE.eyJiIjo3LCJnIjoxNzc3MjI2MDM1LCJyIjoiSlNsNkI5IiwidCI6MiwibSI6MzkwNzE0NTYxNSwibCI6MTc3NzIyNjAzNX0.b2b89f9576f46101.3acc2313238404bab9799d258b89d8b369c59f9108274052379bb5789e98785b; sessionID_shein_m_pwa=s%3Af1WfkwyQtAjc9tFqB0Sw8oQ8tJmX5xNF.g%2BlU4OfN7UG8CzoQmJ%2BCjDtqd6xu%2B7EFDR6M5WJ88Po; armorUuid=20260317073234034c068f63c8199872756c3a28bd082200a616aeaf1960e600; _cbp=fb.1.1777226077157.1562120072; _cfuvid=PVCD.ppP5p6zzjV_j7kbW.jGY8CZaB19t41x92heCFg-1778514056.8331153-1.0.1.1-fuwTAz4z.0FrtW8OwCk2QaGvmNfF5qnUfHdInRi7rQQ; cf_clearance=.51o.AVa2x6B89T0bzXJkpFGje0OXSbZP158MLQ_hEg-1778514058-1.2.1.1-XCAEBOQSxuBBeNjpqJnI66MbCYgzWUSr1FJQ2WQBxBPo.pHvr_lkRjnL5NhOv_HMafV0GI66_qhcQrIwH10EJlClj0iOVfLMlaxkAu5vajoUNF6IVjPkXbXsvk4dB6W7iHiz4rP0SxgyZucdevDok54qd5O7t7yx4jWWxwiYAboRfBaCLHULqkwmFJniKFRsZzXEgN8mXcXsA7zzQXIon4glaRjpwJk9dfAZI9itVCS7xdF3Xt9NYdi0s99rPF4mtOuap168eQAF.gu3NKexQ4lMSeB60t0O1NXBwaTbTyjYvjfj4qT2CdmNxt1w2LbzOULnw5Cc43A3HvKel_bevQ; jump_to_mbr=1; language=br`
+    token: process.env.SHEIN_TOKEN || '',
+    memberId: process.env.SHEIN_MEMBER_ID || '',
+    cookie: process.env.SHEIN_COOKIE || ''
 };
 
 const USER_AGENTS = {
