@@ -4,10 +4,10 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
-require('dotenv').config();
+require('dotenv').config(); // Carrega o .env da pasta atual
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = 3002;
 
 app.use(cors());
 app.use(express.json());
@@ -45,24 +45,6 @@ const USER_AGENTS = {
 };
 
 // ===== AUXILIARES =====
-function mergeCookies(oldCookieString, setCookieArray) {
-    let cookieMap = {};
-    if (oldCookieString) {
-        oldCookieString.split(';').forEach(c => {
-            const [key, ...val] = c.trim().split('=');
-            if (key) cookieMap[key] = val.join('=');
-        });
-    }
-    if (setCookieArray && Array.isArray(setCookieArray)) {
-        setCookieArray.forEach(c => {
-            const cookiePart = c.split(';')[0];
-            const [key, ...val] = cookiePart.trim().split('=');
-            if (key) cookieMap[key] = val.join('=');
-        });
-    }
-    return Object.keys(cookieMap).map(key => `${key}=${cookieMap[key]}`).join('; ');
-}
-
 function isRelevantProduct(productName, searchKeyword) {
     if (!productName || !searchKeyword) return true;
     const nameLower = productName.toLowerCase();
@@ -85,7 +67,7 @@ app.post('/api/analyze-link', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ success: false, error: 'Busca obrigatória' });
     const keyword = url.startsWith('http') ? 'Produto' : url;
-    console.log(`\n🚀 [Lab] Pesquisando: "${keyword}"`);
+    console.log(`\n🚀 [Lab Root] Pesquisando: "${keyword}"`);
     
     const platforms = [
         { name: 'Shopee', fn: searchShopee },
@@ -102,11 +84,8 @@ app.post('/api/analyze-link', async (req, res) => {
         results.forEach((res, index) => {
             const name = platforms[index].name;
             if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
-                const filtered = res.value.filter(p => !p.sales.includes('Direto'));
-                if (filtered.length > 0) {
-                    finalProducts.push(...filtered);
-                    stats[name.toLowerCase().replace(' ', '')] = filtered.length;
-                }
+                finalProducts.push(...res.value);
+                stats[name.toLowerCase().replace(' ', '')] = res.value.length;
             }
         });
 
@@ -117,11 +96,11 @@ app.post('/api/analyze-link', async (req, res) => {
     }
 });
 
-// ===== SHOPEE =====
+// ===== PLATAFORMAS (Mesma lógica consolidada) =====
 async function searchShopee(keyword) {
     try {
         const timestamp = Math.floor(Date.now() / 1000);
-        // Removido originalPrice e priceBeforeDiscount pois a API está rejeitando o campo
+        // Removido originalPrice pois a API está rejeitando o campo
         const query = `query { productOfferV2(keyword: "${keyword}", limit: 12) { nodes { productName imageUrl price offerLink } } }`;
         const body = JSON.stringify({ query });
         const signature = crypto.createHash('sha256').update(SHOPEE_CONFIG.APP_ID + timestamp + body + SHOPEE_CONFIG.SECRET).digest('hex');
@@ -142,7 +121,7 @@ async function searchShopee(keyword) {
                 return {
                     name: p.productName, 
                     price: currentPrice,
-                    originalPrice: null,
+                    originalPrice: null, // Campo indisponível nesta versão da API
                     image: p.imageUrl, 
                     link: p.offerLink, 
                     source: 'Shopee', 
@@ -155,52 +134,6 @@ async function searchShopee(keyword) {
     }
 }
 
-// ===== SHEIN =====
-async function searchShein(keyword) {
-    try {
-        const timestamp = Date.now();
-        const xoest = Buffer.from(`1E|${timestamp}|0BA68F_5BD9_61C4_692E_92A1801D94AB`).toString('base64');
-        const headers = { 
-            'Cookie': SHEIN_CREDENTIALS.cookie, 
-            'mi': String(SHEIN_CREDENTIALS.memberId), 
-            'Token': SHEIN_CREDENTIALS.token, 
-            'siteUid': 'mbr',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36', 
-            'x-oest': xoest 
-        };
-        const res = await axios.post('https://m.shein.com/br/affiliate/api/search/keywordsNew',
-            { "language": "pt-br", "playId": 5, "page": 1, "mid": String(SHEIN_CREDENTIALS.memberId), "keywords": keyword, "limit": 10, "sort": 0 },
-            { headers, timeout: 20000 }
-        );
-        
-        if (res.data?.code !== "0") {
-            console.log("⚠️ Shein retornou erro:", res.data?.code, res.data?.message);
-            return [];
-        }
-
-        const goodsList = res.data?.info?.goodsList || [];
-        return goodsList
-            .filter(p => isRelevantProduct(p.goodsName, keyword))
-            .map(p => {
-                const currentPrice = parseFloat(p.salesPrice) || 0;
-                const origPrice = p.retailPrice ? parseFloat(p.retailPrice) : null;
-                return {
-                    name: p.goodsName, 
-                    price: currentPrice, 
-                    originalPrice: (origPrice && origPrice > currentPrice) ? origPrice : null,
-                    image: p.mainImage?.startsWith('//') ? 'https:' + p.mainImage : p.mainImage,
-                    link: `https://m.shein.com/br/product-p-${p.goodsId}.html`,
-                    source: 'Shein', 
-                    sales: '✨ Onelink'
-                };
-            });
-    } catch (e) { 
-        console.error("❌ Erro Shein:", e.message);
-        return []; 
-    }
-}
-
-// ===== AMAZON =====
 async function searchAmazon(keyword) {
     try {
         const { data } = await axios.get(`https://www.amazon.com.br/s?k=${encodeURIComponent(keyword)}`, {
@@ -215,14 +148,13 @@ async function searchAmazon(keyword) {
             const asin = $el.attr('data-asin');
             if (!name || !asin || !isRelevantProduct(name, keyword)) return true;
 
-            // Extração de Preço Atual
+            // Preço Atual
             const priceText = $el.find('.a-price:not(.a-text-price) .a-offscreen').first().text();
             const price = priceText ? parseFloat(priceText.replace(/[^\d,]/g, '').replace(',', '.')) || 0 : 0;
             if (price <= 0) return true;
 
-            // Extração de Preço Original (Riscado)
+            // Preço Original
             let originalPrice = 0;
-            // Tenta múltiplos seletores comuns na Amazon Brasil
             const strikeText = $el.find('.a-price.a-text-price .a-offscreen').first().text() || 
                              $el.find('.a-text-strike').first().text() ||
                              $el.find('span[data-a-strike="true"]').text();
@@ -231,10 +163,9 @@ async function searchAmazon(keyword) {
                 originalPrice = parseFloat(strikeText.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
             }
             
-            // Fallback Regex se o seletor falhar ou for igual ao preço atual
+            // Fallback Regex
             if (originalPrice <= price) {
                 const htmlContent = $el.html();
-                // Procura por valores riscados no HTML
                 const strikeMatch = htmlContent.match(/De:\s*R\$\s*(\d+[\d\.,]*)/i) || 
                                    htmlContent.match(/span class="a-offscreen">R\$\s*(\d+[\d\.,]*)[^<]*?<\/span>[^<]*?span class="a-text-price/i);
                 if (strikeMatch) {
@@ -242,21 +173,20 @@ async function searchAmazon(keyword) {
                 }
             }
 
-            products.push({
+            products.push({ 
                 name, 
                 price, 
-                originalPrice: (originalPrice > price) ? originalPrice : null,
+                originalPrice: (originalPrice > price) ? originalPrice : null, 
                 image: $el.find('img.s-image').attr('src'), 
                 source: 'Amazon', 
-                sales: '📦 amzn.to',
-                link: `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_CREDENTIALS.tag}`
+                sales: '📦 amzn.to', 
+                link: `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_CREDENTIALS.tag}` 
             });
         });
         return products;
     } catch (e) { return []; }
 }
 
-// ===== MERCADO LIVRE =====
 async function searchMercadoLivre(keyword) {
     try {
         const { data } = await axios.get(`https://lista.mercadolivre.com.br/${encodeURIComponent(keyword)}`, {
@@ -269,13 +199,11 @@ async function searchMercadoLivre(keyword) {
             const $el = $(el);
             const name = $el.find('.poly-component__title, .ui-search-item__title').text().trim();
             if (!name || !isRelevantProduct(name, keyword)) return true;
-
             const currentPriceEl = $el.find('.andes-money-amount:not(.andes-money-amount--previous)').first();
             const priceWhole = currentPriceEl.find('.andes-money-amount__fraction').text().replace(/[^0-9]/g, '');
             const priceCents = currentPriceEl.find('.andes-money-amount__cents').text().replace(/[^0-9]/g, '') || '00';
             const price = priceWhole ? parseFloat(`${priceWhole}.${priceCents.substring(0,2)}`) : 0;
             if (price <= 0) return true;
-
             const prevEl = $el.find('.andes-money-amount--previous');
             let originalPrice = null;
             if (prevEl.length > 0) {
@@ -283,28 +211,91 @@ async function searchMercadoLivre(keyword) {
                 const prevCents = prevEl.find('.andes-money-amount__cents').text().replace(/[^0-9]/g, '') || '00';
                 if (prevWhole) originalPrice = parseFloat(`${prevWhole}.${prevCents.substring(0,2)}`);
             }
-
-            raw.push({ name, price, originalPrice: (originalPrice > price) ? originalPrice : null, image: $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src'), link: $el.find('a').first().attr('href') });
+            raw.push({ name, price, originalPrice: (originalPrice > price) ? originalPrice : null, image: $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src'), link: $el.find('a').first().attr('href'), source: 'Mercado Livre', sales: '🔥 Afiliado ML' });
         });
-
-        // Fallback Regex ML
-        if (raw.length < 3) {
-            const itemRegex = /"id":"(MLB\d+)"[^}]{0,1500}?"title":"([^"]+)"[^}]{0,500}?"price":([0-9.]+)[^}]{0,500}?(?:"original_price":([0-9.]+)[^}]{0,500}?)?"permalink":"([^"]+)"[^}]{0,500}?"thumbnail":"([^"]+)"/g;
-            let match;
-            while ((match = itemRegex.exec(data)) !== null && raw.length < 10) {
-                const [, id, title, priceStr, original_price, permalink, thumbnail] = match;
-                if (isRelevantProduct(title, keyword)) {
-                    raw.push({
-                        name: title.replace(/\\u(\w{4})/gi, (m, g) => String.fromCharCode(parseInt(g, 16))),
-                        price: parseFloat(priceStr), originalPrice: original_price ? parseFloat(original_price) : null,
-                        image: thumbnail.replace(/\\\//g, '/').replace('http://', 'https://'), link: permalink.split('?')[0].replace(/\\\//g, '/')
-                    });
-                }
-            }
-        }
-
-        return raw.map(p => ({ ...p, source: 'Mercado Livre', sales: '🔥 Afiliado ML', link: p.link.startsWith('http') ? p.link : 'https://www.mercadolivre.com.br' + p.link }));
+        return raw.map(p => ({ ...p, link: p.link.startsWith('http') ? p.link : 'https://www.mercadolivre.com.br' + p.link }));
     } catch (e) { return []; }
 }
 
-app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
+async function searchShein(keyword) {
+    try {
+        const timestamp = Date.now();
+        const deviceId = "FEC65E18_4B1D_24F4_3DEE_093E7768A57";
+        const xoest = Buffer.from(`${deviceId}|${timestamp}|B`).toString('base64');
+        
+        const headers = { 
+            'Cookie': SHEIN_CREDENTIALS.cookie, 
+            'mi': String(SHEIN_CREDENTIALS.memberId), 
+            'Token': SHEIN_CREDENTIALS.token, 
+            'siteUid': 'mbr',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36', 
+            'x-oest': xoest 
+        };
+
+        const res = await axios.post('https://m.shein.com/br/affiliate/api/search/keywordsNew', 
+            { "language": "pt-br", "playId": 5, "page": 1, "mid": String(SHEIN_CREDENTIALS.memberId), "keywords": keyword, "limit": 10, "sort": 0 }, 
+            { headers, timeout: 20000 }
+        );
+
+        if (res.data?.code !== "0") {
+            headers['x-oest'] = 'NDRBRUQxMUVfRUNEMV85NTM0Xzc1NDFfNDE0MDBCMTFDNEU5';
+            const retry = await axios.post('https://m.shein.com/br/affiliate/api/search/keywordsNew', 
+                { "language": "pt-br", "playId": 5, "page": 1, "mid": String(SHEIN_CREDENTIALS.memberId), "keywords": keyword, "limit": 10, "sort": 0 }, 
+                { headers, timeout: 20000 }
+            );
+            if (retry.data?.code === "0") return await processSheinResults(retry.data, keyword, headers);
+            return [];
+        }
+
+        return await processSheinResults(res.data, keyword, headers);
+    } catch (e) { return []; }
+}
+
+async function processSheinResults(data, keyword, headers) {
+    const list = (data?.info?.goodsList || []).filter(p => isRelevantProduct(p.goodsName, keyword)).slice(0, 5);
+    
+    // Converte os links para links de afiliado em paralelo (limite de 5 para performance)
+    const converted = await Promise.all(list.map(async (p) => {
+        let finalLink = `https://m.shein.com/br/product-p-${p.goodsId}.html`;
+        try {
+            const genRes = await axios.post('https://m.shein.com/br/affiliate/api/share/link/realtime/generate', {
+                "abtVersion": 1, 
+                "activityId": 20, 
+                "goodsId": p.goodsId, 
+                "type": 2, 
+                "language": "pt-br", 
+                "uid": String(SHEIN_CREDENTIALS.memberId),
+                "translations": "{\"SHEIN_KEY_H5_48336\":\"Pesquise meu código no app da SHEIN\",\"SHEIN_KEY_H5_34201\":\"vendido\",\"SHEIN_KEY_H5_48335\":\"Descontos e promoções estão sujeitos a alterações.\",\"SHEIN_KEY_H5_48674\":\"Envio Rápido\",\"SHEIN_KEY_H5_48337\":\"Minhas escolhas para você\",\"SHEIN_KEY_H5_48338\":\"Pesquise {0} no app da SHEIN\"}",
+                "ogpParamRequest": {
+                    "orgImgUrl": p.mainImage,
+                    "shareTitle": p.goodsName
+                },
+                "goodsPicRequestList": [{ 
+                    "goodsId": p.goodsId, 
+                    "goodsName": p.goodsName, 
+                    "mainImage": p.mainImage, 
+                    "salesPriceText": `R$${p.salesPrice}`, 
+                    "siteUid": "mbr" 
+                }]
+            }, { headers, timeout: 5000 });
+            
+            if (genRes.data?.info?.shareLink) {
+                finalLink = genRes.data.info.shareLink;
+            }
+        } catch (err) { }
+
+        return {
+            name: p.goodsName, 
+            price: parseFloat(p.salesPrice) || 0, 
+            originalPrice: (p.retailPrice && parseFloat(p.retailPrice) > parseFloat(p.salesPrice)) ? parseFloat(p.retailPrice) : null,
+            image: p.mainImage?.startsWith('//') ? 'https:' + p.mainImage : p.mainImage, 
+            link: finalLink, 
+            source: 'Shein', 
+            sales: finalLink.includes('shein.top') ? '💎 Link Trackeado' : '✨ Onelink'
+        };
+    }));
+
+    return converted;
+}
+
+app.listen(PORT, () => console.log(`🚀 Lab pronto na porta ${PORT}`));
