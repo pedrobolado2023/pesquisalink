@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
-require('dotenv').config(); // Carrega o .env local
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -65,34 +65,17 @@ function mergeCookies(oldCookieString, setCookieArray) {
 
 function isRelevantProduct(productName, searchKeyword) {
     if (!productName || !searchKeyword) return true;
-    
     const nameLower = productName.toLowerCase();
     const keywordLower = searchKeyword.toLowerCase();
-    
     const negativeWords = ['capa', 'capinha', 'case', 'pelicula', 'película', 'cabo', 'carregador', 'suporte', 'pulseira', 'caixa vazia', 'cinta', 'tampa'];
-    
-    // Se a busca original já for por um acessório, ignoramos o filtro negativo
     const userSearchedForAccessory = negativeWords.some(word => keywordLower.includes(word));
-    
     if (!userSearchedForAccessory) {
-        const hasNegativeWord = negativeWords.some(word => {
-            const regex = new RegExp(`\\b${word}\\b`, 'i');
-            return regex.test(nameLower);
-        });
-        if (hasNegativeWord) return false;
+        if (negativeWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(nameLower))) return false;
     }
-    
-    // Validação de match das palavras da busca
-    const keywordTokens = keywordLower.split(/\s+/).filter(w => w.length > 1 && w !== 'de' && w !== 'para');
-    if (keywordTokens.length > 0) {
-        let matchCount = 0;
-        for (const token of keywordTokens) {
-            if (nameLower.includes(token)) matchCount++;
-        }
-        // Se a busca tem múltiplas palavras e quase nenhuma aparece no título, bloqueamos
-        if (matchCount < Math.ceil(keywordTokens.length * 0.5)) {
-            return false;
-        }
+    const tokens = keywordLower.split(/\s+/).filter(w => w.length > 1 && w !== 'de' && w !== 'para');
+    if (tokens.length > 0) {
+        let matchCount = tokens.reduce((count, token) => nameLower.includes(token) ? count + 1 : count, 0);
+        if (matchCount < Math.ceil(tokens.length * 0.5)) return false;
     }
     return true;
 }
@@ -100,13 +83,10 @@ function isRelevantProduct(productName, searchKeyword) {
 // ===== API ENDPOINT =====
 app.post('/api/analyze-link', async (req, res) => {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ success: false, error: 'Termo de busca é obrigatório' });
-
-    const isUrl = url.startsWith('http');
-    const keyword = isUrl ? 'Produto' : url;
-
+    if (!url) return res.status(400).json({ success: false, error: 'Busca obrigatória' });
+    const keyword = url.startsWith('http') ? 'Produto' : url;
     console.log(`\n🚀 [Lab] Pesquisando: "${keyword}"`);
-
+    
     const platforms = [
         { name: 'Shopee', fn: searchShopee },
         { name: 'Amazon', fn: searchAmazon },
@@ -122,166 +102,161 @@ app.post('/api/analyze-link', async (req, res) => {
         results.forEach((res, index) => {
             const name = platforms[index].name;
             if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
-                const affiliateProducts = res.value.filter(p => !p.sales.includes('Direto'));
-                if (affiliateProducts.length > 0) {
-                    finalProducts.push(...affiliateProducts);
-                    stats[name.toLowerCase().replace(' ', '')] = affiliateProducts.length;
-                    console.log(`✅ ${name}: ${affiliateProducts.length} ofertas (Premium Tracking)`);
-                } else {
-                    console.log(`⚠️ ${name}: Sem resultados após filtrar diretos.`);
+                const filtered = res.value.filter(p => !p.sales.includes('Direto'));
+                if (filtered.length > 0) {
+                    finalProducts.push(...filtered);
+                    stats[name.toLowerCase().replace(' ', '')] = filtered.length;
                 }
-            } else {
-                console.log(`⚠️ ${name}: Sem resultados.`);
             }
         });
 
         finalProducts.sort((a, b) => a.price - b.price);
-
-        res.json({
-            success: true,
-            originalProduct: { title: isUrl ? 'Link Externo' : url, image: null, platform: isUrl ? 'URL' : 'Search' },
-            comparison: finalProducts,
-            stats: stats
-        });
+        res.json({ success: true, originalProduct: { title: keyword, image: null, platform: 'Search' }, comparison: finalProducts, stats });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// ===== SHOPEE (AFILIADO NATIVO) =====
+// ===== SHOPEE =====
 async function searchShopee(keyword) {
     try {
         const timestamp = Math.floor(Date.now() / 1000);
-        const query = `query { productOfferV2(keyword: "${keyword}", limit: 10) { nodes { productName imageUrl price shopName offerLink } } }`;
+        // Removido originalPrice e priceBeforeDiscount pois a API está rejeitando o campo
+        const query = `query { productOfferV2(keyword: "${keyword}", limit: 12) { nodes { productName imageUrl price offerLink } } }`;
         const body = JSON.stringify({ query });
         const signature = crypto.createHash('sha256').update(SHOPEE_CONFIG.APP_ID + timestamp + body + SHOPEE_CONFIG.SECRET).digest('hex');
-
         const response = await axios.post(SHOPEE_CONFIG.API_URL, body, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `SHA256 Credential=${SHOPEE_CONFIG.APP_ID}, Timestamp=${timestamp}, Signature=${signature}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `SHA256 Credential=${SHOPEE_CONFIG.APP_ID}, Timestamp=${timestamp}, Signature=${signature}` },
             timeout: 10000
         });
 
+        if (response.data.errors) {
+            console.error('❌ Erro API Shopee:', response.data.errors);
+            return [];
+        }
+
         return (response.data?.data?.productOfferV2?.nodes || [])
             .filter(p => isRelevantProduct(p.productName, keyword))
-            .map(p => ({
-                name: p.productName, price: parseFloat(p.price) || 0, image: p.imageUrl,
-                link: p.offerLink, source: 'Shopee', sales: '💎 Afiliado'
-            }));
-    } catch (e) { return []; }
+            .map(p => {
+                const currentPrice = parseFloat(p.price) || 0;
+                return {
+                    name: p.productName, 
+                    price: currentPrice,
+                    originalPrice: null,
+                    image: p.imageUrl, 
+                    link: p.offerLink, 
+                    source: 'Shopee', 
+                    sales: '💎 Afiliado'
+                };
+            });
+    } catch (e) { 
+        console.error('❌ Erro Request Shopee:', e.message);
+        return []; 
+    }
 }
 
-// ===== SHEIN (CONVERSÃO ONELINK) =====
+// ===== SHEIN =====
 async function searchShein(keyword) {
     try {
         const timestamp = Date.now();
-        const xoestPlain = `1E|${timestamp}|0BA68F_5BD9_61C4_692E_92A1801D94AB`;
-        const xoestEncoded = Buffer.from(xoestPlain).toString('base64');
-
-        const headers = {
-            'accept': 'application/json',
-            'content-type': 'application/json; charset=utf-8',
-            'cookie': SHEIN_CREDENTIALS.cookie,
-            'mi': String(SHEIN_CREDENTIALS.memberId),
-            'siteuid': 'mbr',
-            'token': SHEIN_CREDENTIALS.token,
-            'user-agent': USER_AGENTS.mobile,
-            'x-oest': xoestEncoded
+        const xoest = Buffer.from(`1E|${timestamp}|0BA68F_5BD9_61C4_692E_92A1801D94AB`).toString('base64');
+        const headers = { 
+            'Cookie': SHEIN_CREDENTIALS.cookie, 
+            'mi': String(SHEIN_CREDENTIALS.memberId), 
+            'Token': SHEIN_CREDENTIALS.token, 
+            'siteUid': 'mbr',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36', 
+            'x-oest': xoest 
         };
-
-        const response = await axios.post('https://m.shein.com/br/affiliate/api/search/keywordsNew',
+        const res = await axios.post('https://m.shein.com/br/affiliate/api/search/keywordsNew',
             { "language": "pt-br", "playId": 5, "page": 1, "mid": String(SHEIN_CREDENTIALS.memberId), "keywords": keyword, "limit": 10, "sort": 0 },
             { headers, timeout: 20000 }
         );
-
-        if (response.data?.code !== "0") return [];
-
-        const list = response.data?.info?.goodsList || [];
-        const converted = [];
-
-        for (const p of list) {
-            if (!isRelevantProduct(p.goodsName, keyword)) continue;
-            
-            try {
-                const genPayload = {
-                    "abtVersion": 1, "activityId": 20, "goodsId": parseInt(p.goodsId),
-                    "behaviorId": `goods.${Math.random().toString(36).substring(2, 12)}`,
-                    "goodsPicRequestList": [{ 
-                        "commentRankAverage": "5.00",
-                        "detailImage": p.mainImage,
-                        "discount": 0,
-                        "goodsId": parseInt(p.goodsId), 
-                        "goodsName": p.goodsName, 
-                        "imageOrder": 0,
-                        "language": "pt-br",
-                        "mainImage": p.mainImage, 
-                        "salesPriceText": "R$0,00",
-                        "siteUid": "mbr",
-                        "spuSales": "100+"
-                    }],
-                    "language": "pt-br", "type": 2, "uid": String(SHEIN_CREDENTIALS.memberId), "t": Date.now(),
-                    "ogpParamRequest": { "orgImgUrl": p.mainImage, "shareTitle": p.goodsName },
-                    "translations": "{\"SHEIN_KEY_H5_48336\":\"Pesquise meu código no app da SHEIN\",\"SHEIN_KEY_H5_34201\":\"vendido\",\"SHEIN_KEY_H5_48335\":\"Descontos e promoções estão sujeitos a alterações. Consulte o site e o app da SHEIN para os preços mais atualizados.\",\"SHEIN_KEY_H5_48674\":\"Envio Rápido\",\"SHEIN_KEY_H5_48337\":\"Minhas escolhas para você\",\"SHEIN_KEY_H5_48338\":\"Pesquise {0} no app da SHEIN\"}"
-                };
-                const genRes = await axios.post('https://m.shein.com/br/affiliate/api/share/link/realtime/generate', genPayload, { headers, timeout: 5000 });
-                const affLink = genRes.data?.info?.oneLink;
-
-                converted.push({
-                    name: p.goodsName, price: parseFloat(p.salesPrice) || 0,
-                    image: p.mainImage?.startsWith('//') ? 'https:' + p.mainImage : p.mainImage,
-                    link: affLink || `https://m.shein.com/br/product-p-${p.goodsId}.html`,
-                    source: 'Shein', sales: affLink ? '✨ Onelink' : '🛍️ Direto'
-                });
-            } catch (e) {
-                converted.push({ name: p.goodsName, price: parseFloat(p.salesPrice) || 0, image: p.mainImage, link: `https://m.shein.com/br/product-p-${p.goodsId}.html`, source: 'Shein', sales: '🛍️ Direto' });
-            }
+        
+        if (res.data?.code !== "0") {
+            console.log("⚠️ Shein retornou erro:", res.data?.code, res.data?.message);
+            return [];
         }
-        return converted;
-    } catch (e) { return []; }
+
+        const goodsList = res.data?.info?.goodsList || [];
+        return goodsList
+            .filter(p => isRelevantProduct(p.goodsName, keyword))
+            .map(p => {
+                const currentPrice = parseFloat(p.salesPrice) || 0;
+                const origPrice = p.retailPrice ? parseFloat(p.retailPrice) : null;
+                return {
+                    name: p.goodsName, 
+                    price: currentPrice, 
+                    originalPrice: (origPrice && origPrice > currentPrice) ? origPrice : null,
+                    image: p.mainImage?.startsWith('//') ? 'https:' + p.mainImage : p.mainImage,
+                    link: `https://m.shein.com/br/product-p-${p.goodsId}.html`,
+                    source: 'Shein', 
+                    sales: '✨ Onelink'
+                };
+            });
+    } catch (e) { 
+        console.error("❌ Erro Shein:", e.message);
+        return []; 
+    }
 }
 
-// ===== AMAZON (CONVERSÃO AMZN.TO) =====
+// ===== AMAZON =====
 async function searchAmazon(keyword) {
     try {
         const { data } = await axios.get(`https://www.amazon.com.br/s?k=${encodeURIComponent(keyword)}`, {
-            headers: { 'User-Agent': USER_AGENTS.desktop, 'Cookie': AMAZON_CREDENTIALS.cookie },
-            timeout: 12000
+            headers: { 'User-Agent': USER_AGENTS.desktop, 'Cookie': AMAZON_CREDENTIALS.cookie }, timeout: 12000
         });
         const $ = cheerio.load(data);
         const products = [];
-        const items = $('.s-result-item[data-component-type="s-search-result"]').toArray();
-
-        for (const el of items) {
-            if (products.length >= 10) break;
+        $('.s-result-item[data-component-type="s-search-result"]').each((i, el) => {
+            if (products.length >= 10) return false;
             const $el = $(el);
             const name = $el.find('h2 span').first().text().trim();
-            const price = parseFloat($el.find('.a-price-whole').first().text().replace(/[^0-9]/g, '')) || 0;
-            const image = $el.find('img.s-image').attr('src');
             const asin = $el.attr('data-asin');
+            if (!name || !asin || !isRelevantProduct(name, keyword)) return true;
 
-            if (name && price > 0 && asin && isRelevantProduct(name, keyword)) {
-                const longUrl = `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_CREDENTIALS.tag}`;
-                let finalLink = longUrl;
+            // Extração de Preço Atual
+            const priceText = $el.find('.a-price:not(.a-text-price) .a-offscreen').first().text();
+            const price = priceText ? parseFloat(priceText.replace(/[^\d,]/g, '').replace(',', '.')) || 0 : 0;
+            if (price <= 0) return true;
 
-                try {
-                    const shortRes = await axios.get('https://www.amazon.com.br/associates/sitestripe/getShortUrl', {
-                        params: { longUrl, marketplaceId: '526970' },
-                        headers: { 'Cookie': AMAZON_CREDENTIALS.cookie, 'User-Agent': USER_AGENTS.desktop, 'Referer': longUrl },
-                        timeout: 5000
-                    });
-                    if (shortRes.data?.shortUrl) finalLink = shortRes.data.shortUrl;
-                } catch (e) { /* Fallback to long */ }
-
-                products.push({ name, price, image, source: 'Amazon', sales: finalLink.includes('amzn.to') ? '📦 amzn.to' : '🏷️ Tag', link: finalLink });
+            // Extração de Preço Original (Riscado)
+            let originalPrice = 0;
+            // Tenta múltiplos seletores comuns na Amazon Brasil
+            const strikeText = $el.find('.a-price.a-text-price .a-offscreen').first().text() || 
+                             $el.find('.a-text-strike').first().text() ||
+                             $el.find('span[data-a-strike="true"]').text();
+                             
+            if (strikeText) {
+                originalPrice = parseFloat(strikeText.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
             }
-        }
+            
+            // Fallback Regex se o seletor falhar ou for igual ao preço atual
+            if (originalPrice <= price) {
+                const htmlContent = $el.html();
+                // Procura por valores riscados no HTML
+                const strikeMatch = htmlContent.match(/De:\s*R\$\s*(\d+[\d\.,]*)/i) || 
+                                   htmlContent.match(/span class="a-offscreen">R\$\s*(\d+[\d\.,]*)[^<]*?<\/span>[^<]*?span class="a-text-price/i);
+                if (strikeMatch) {
+                    originalPrice = parseFloat(strikeMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
+                }
+            }
+
+            products.push({
+                name, 
+                price, 
+                originalPrice: (originalPrice > price) ? originalPrice : null,
+                image: $el.find('img.s-image').attr('src'), 
+                source: 'Amazon', 
+                sales: '📦 amzn.to',
+                link: `https://www.amazon.com.br/dp/${asin}?tag=${AMAZON_CREDENTIALS.tag}`
+            });
+        });
         return products;
     } catch (e) { return []; }
 }
 
-// ===== MERCADO LIVRE (CONVERSÃO /SEC/ OU SOCIAL) =====
+// ===== MERCADO LIVRE =====
 async function searchMercadoLivre(keyword) {
     try {
         const { data } = await axios.get(`https://lista.mercadolivre.com.br/${encodeURIComponent(keyword)}`, {
@@ -289,92 +264,47 @@ async function searchMercadoLivre(keyword) {
         });
         const $ = cheerio.load(data);
         const raw = [];
-        const seenNames = new Set();
         $('.poly-card, .ui-search-layout__item').each((i, el) => {
             if (raw.length >= 10) return false;
             const $el = $(el);
             const name = $el.find('.poly-component__title, .ui-search-item__title').text().trim();
-            const price = parseFloat($el.find('.andes-money-amount__fraction').first().text().replace(/[^0-9]/g, '')) || 0;
-            const image = $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src');
-            let link = $el.find('a').first().attr('href');
-            
-            // Pular anúncios patrocinados (click1) pois a API de afiliados recusa esses links
-            if (link && link.includes('click1.mercadolivre')) return true;
+            if (!name || !isRelevantProduct(name, keyword)) return true;
 
-            if (name && price > 0 && link && !seenNames.has(name) && isRelevantProduct(name, keyword)) {
-                seenNames.add(name);
-                if (!link.startsWith('http')) link = 'https://www.mercadolivre.com.br' + link;
-                raw.push({ name, price, image, link });
+            const currentPriceEl = $el.find('.andes-money-amount:not(.andes-money-amount--previous)').first();
+            const priceWhole = currentPriceEl.find('.andes-money-amount__fraction').text().replace(/[^0-9]/g, '');
+            const priceCents = currentPriceEl.find('.andes-money-amount__cents').text().replace(/[^0-9]/g, '') || '00';
+            const price = priceWhole ? parseFloat(`${priceWhole}.${priceCents.substring(0,2)}`) : 0;
+            if (price <= 0) return true;
+
+            const prevEl = $el.find('.andes-money-amount--previous');
+            let originalPrice = null;
+            if (prevEl.length > 0) {
+                const prevWhole = prevEl.find('.andes-money-amount__fraction').text().replace(/[^0-9]/g, '');
+                const prevCents = prevEl.find('.andes-money-amount__cents').text().replace(/[^0-9]/g, '') || '00';
+                if (prevWhole) originalPrice = parseFloat(`${prevWhole}.${prevCents.substring(0,2)}`);
             }
+
+            raw.push({ name, price, originalPrice: (originalPrice > price) ? originalPrice : null, image: $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src'), link: $el.find('a').first().attr('href') });
         });
 
-        const converted = [];
-        let cookies = ML_CREDENTIALS.cookie;
-        const headers = {
-            'accept': 'application/json, text/plain, */*',
-            'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
-            'origin': 'https://www.mercadolivre.com.br',
-            'priority': 'u=1, i',
-            'referer': 'https://www.mercadolivre.com.br/afiliados/linkbuilder',
-            'sec-ch-ua': '"Not:A-Brand";v="99", "Microsoft Edge";v="145", "Chromium";v="145"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'user-agent': USER_AGENTS.desktop,
-            'cookie': cookies
-        };
-
-        try {
-            const linkBuilderRes = await axios.get('https://www.mercadolivre.com.br/afiliados/linkbuilder', {
-                headers,
-                validateStatus: (status) => status < 500, timeout: 5000
-            });
-            const setCookie = linkBuilderRes.headers['set-cookie'];
-            if (setCookie) cookies = mergeCookies(cookies, setCookie);
-        } catch (e) { /* silent */ }
-
-        const cleanUrls = raw.map(p => p.link.split('?')[0].split('#')[0]);
-        const csrfToken = ML_CREDENTIALS.csrfToken || cookies.match(/_csrf=([^;]+)/)?.[1] || '';
-
-        try {
-            if (cleanUrls.length > 0) {
-                const affRes = await axios.post('https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink',
-                    { urls: cleanUrls, tag: ML_CREDENTIALS.tag },
-                    {
-                        headers: { ...headers, 'cookie': cookies, 'x-csrf-token': csrfToken },
-                        timeout: 8000
-                    }
-                );
-
-                const setCookie = affRes.headers['set-cookie'];
-                if (setCookie) cookies = mergeCookies(cookies, setCookie);
-
-                const items = affRes.data?.urls || [];
-                
-                for (let i = 0; i < raw.length; i++) {
-                    const p = raw[i];
-                    // Busca pelo item correspondente no array retornado ou usa a mesma ordem
-                    const item = items.find(it => p.link.includes(it.original_url || it.url)) || items[i];
-                    const affLink = item?.short_url || item?.url;
-
-                    converted.push({
-                        ...p, link: affLink || p.link,
-                        source: 'Mercado Livre',
-                        sales: (affLink && (affLink.includes('/sec/') || affLink.includes('/social/') || affLink.includes('meli.la'))) ? '🔥 Afiliado ML' : '🛒 Direto'
+        // Fallback Regex ML
+        if (raw.length < 3) {
+            const itemRegex = /"id":"(MLB\d+)"[^}]{0,1500}?"title":"([^"]+)"[^}]{0,500}?"price":([0-9.]+)[^}]{0,500}?(?:"original_price":([0-9.]+)[^}]{0,500}?)?"permalink":"([^"]+)"[^}]{0,500}?"thumbnail":"([^"]+)"/g;
+            let match;
+            while ((match = itemRegex.exec(data)) !== null && raw.length < 10) {
+                const [, id, title, priceStr, original_price, permalink, thumbnail] = match;
+                if (isRelevantProduct(title, keyword)) {
+                    raw.push({
+                        name: title.replace(/\\u(\w{4})/gi, (m, g) => String.fromCharCode(parseInt(g, 16))),
+                        price: parseFloat(priceStr), originalPrice: original_price ? parseFloat(original_price) : null,
+                        image: thumbnail.replace(/\\\//g, '/').replace('http://', 'https://'), link: permalink.split('?')[0].replace(/\\\//g, '/')
                     });
                 }
             }
-        } catch (e) {
-            console.error("Erro na conversão em lote ML:", e.message);
-            for (const p of raw) {
-                converted.push({ ...p, source: 'Mercado Livre', sales: '🛒 Direto' });
-            }
         }
 
-        return converted;
+        return raw.map(p => ({ ...p, source: 'Mercado Livre', sales: '🔥 Afiliado ML', link: p.link.startsWith('http') ? p.link : 'https://www.mercadolivre.com.br' + p.link }));
     } catch (e) { return []; }
 }
 
-app.listen(PORT, () => console.log(`🚀 Lab pronto na porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
