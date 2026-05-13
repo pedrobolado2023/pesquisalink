@@ -484,6 +484,21 @@ button#analyzeBtn:disabled {
 
 .rating-tag i { color: #fbbf24; }
 
+/* Discount Badge */
+.discount-badge {
+    position: absolute;
+    bottom: 12px; right: 12px;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    font-size: 0.78rem;
+    font-weight: 800;
+    padding: 5px 10px;
+    border-radius: 8px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 3px 12px rgba(16, 185, 129, 0.45);
+    z-index: 2;
+}
+
 /* Card Body */
 .card-body { padding: 22px; display: flex; flex-direction: column; flex: 1; }
 
@@ -541,14 +556,39 @@ button#analyzeBtn:disabled {
 
 .original-price {
     font-size: 0.78rem;
-    color: var(--text-dim);
+    color: #94a3b8;
     text-decoration: line-through;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.era-label {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-decoration: none;
+    display: inline-block;
 }
 
 .current-price {
     display: flex;
     align-items: baseline;
     gap: 3px;
+}
+
+.current-price.price-discount .currency,
+.current-price.price-discount .price-value {
+    color: #059669;
+}
+
+.current-price.price-discount .currency {
+    color: #10b981;
 }
 
 .currency {
@@ -567,7 +607,7 @@ button#analyzeBtn:disabled {
 /* Action Buttons */
 .card-actions { display: flex; gap: 8px; }
 
-.btn-copy, .btn-buy {
+.btn-copy {
     border: none;
     border-radius: 12px;
     width: 46px;
@@ -581,13 +621,26 @@ button#analyzeBtn:disabled {
 }
 
 .btn-buy {
-    background: linear-gradient(135deg, var(--primary), var(--accent));
+    background: #111111;
     color: white;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    padding: 0 20px;
+    height: 46px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-family: 'Outfit', sans-serif;
 }
 
 .btn-buy:hover {
-    transform: scale(1.1);
-    box-shadow: 0 0 18px rgba(0, 0, 0, 0.3);
+    background: #222222;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    transform: scale(1.05);
 }
 
 .btn-copy {

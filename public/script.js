@@ -144,8 +144,17 @@ function renderGrid(products) {
             ? `<div class="commission-tag"><i class="ph ph-trend-up"></i> ${product.commission}</div>`
             : '';
 
-        const originalPriceHtml = product.originalPrice && product.originalPrice > product.price
-            ? `<div class="original-price">De R$ ${product.originalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>`
+        const hasDiscount = product.originalPrice && product.originalPrice > product.price;
+        const discountPct = hasDiscount
+            ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+            : 0;
+
+        const originalPriceHtml = hasDiscount
+            ? `<div class="original-price"><span class="era-label">era</span> R$ ${product.originalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>`
+            : '';
+
+        const discountBadgeHtml = hasDiscount && discountPct > 0
+            ? `<div class="discount-badge">-${discountPct}%</div>`
             : '';
 
         const safeLink = (product.link || '#').replace(/'/g, "\\'");
@@ -157,6 +166,7 @@ function renderGrid(products) {
                     alt="${product.name}"
                     onerror="this.src='https://placehold.co/200x200/1e293b/94a3b8?text=Sem+Imagem'; this.onerror=null;">
                 <div class="platform-badge ${platformKey}">${platformEmoji} ${product.source}</div>
+                ${discountBadgeHtml}
                 ${ratingHtml}
             </div>
             <div class="card-body">
@@ -170,7 +180,7 @@ function renderGrid(products) {
                 <div class="card-footer">
                     <div class="price-box">
                         ${originalPriceHtml}
-                        <div class="current-price">
+                        <div class="current-price ${hasDiscount ? 'price-discount' : ''}">
                             <span class="currency">R$</span>
                             <span class="price-value">${product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
@@ -179,9 +189,7 @@ function renderGrid(products) {
                         <button class="btn-copy" onclick="copyLink('${safeLink}')" title="Copiar link">
                             <i class="ph ph-copy"></i>
                         </button>
-                        <button class="btn-buy" onclick="handleBuy('${safeLink}')" title="Ver oferta">
-                            <i class="ph ph-arrow-right"></i>
-                        </button>
+                        <button class="btn-buy" onclick="handleBuy('${safeLink}')" title="Ver oferta">QUERO</button>
                     </div>
                 </div>
             </div>`;
