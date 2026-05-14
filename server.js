@@ -7,8 +7,7 @@ const crypto = require('crypto');
 require('dotenv').config(); // Carrega o .env da pasta atual
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-console.log(`📡 Porta: ${PORT}`);
+const PORT = 3002;
 
 app.use(cors());
 app.use(express.json());
@@ -41,26 +40,58 @@ const SHEIN_CREDENTIALS = {
 };
 
 const USER_AGENTS = {
-    desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
-    mobile: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
+    desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
-// ===== AUXILIARES =====
-function isRelevantProduct(productName, searchKeyword) {
-    if (!productName || !searchKeyword) return true;
-    const nameLower = productName.toLowerCase();
-    const keywordLower = searchKeyword.toLowerCase();
-    const negativeWords = ['capa', 'capinha', 'case', 'pelicula', 'película', 'cabo', 'carregador', 'suporte', 'pulseira', 'caixa vazia', 'cinta', 'tampa'];
-    const userSearchedForAccessory = negativeWords.some(word => keywordLower.includes(word));
-    if (!userSearchedForAccessory) {
-        if (negativeWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(nameLower))) return false;
-    }
-    const tokens = keywordLower.split(/\s+/).filter(w => w.length > 1 && w !== 'de' && w !== 'para');
-    if (tokens.length > 0) {
-        let matchCount = tokens.reduce((count, token) => nameLower.includes(token) ? count + 1 : count, 0);
-        if (matchCount < Math.ceil(tokens.length * 0.5)) return false;
-    }
-    return true;
+// Lista de Marcas para Priorização de Qualidade
+const PREMIUM_BRANDS = [
+    'NIKE', 'ADIDAS', 'PUMA', 'MIZUNO', 'SAMSUNG', 'APPLE', 'IPHONE', 'XIAOMI', 'ASUS', 
+    'DELL', 'LOGITECH', 'RAZER', 'CORSAIR', 'HYPERX', 'LENOVO', 'MOTOROLA', 'PHILIPS',
+    'LG', 'SONY', 'STANLEY', 'OAKLEY', 'CONVERSE', 'VANS', 'LACOSTE', 'TOMMY', 'CALVIN'
+];
+
+// Palavras-chave para Filtrar Acessórios (Lixo de busca)
+const TRASH_KEYWORDS = [
+    'CAPINHA', 'PELICULA', 'CABO', 'ADAPTADOR', 'CADARÇO', 'LIMPEZA', 'REFIL', 'SUPOSTE', 
+    'CASE', 'PROTEÇÃO', 'ADESIVO', 'MINIATURA', 'PINGENTE', 'CORRENTE'
+];
+
+function isRelevantProduct(name, keyword) {
+    const n = name.toUpperCase();
+    const k = keyword.toUpperCase();
+    
+    // Se o nome contém termos de lixo mas a busca não pediu por eles, ignora
+    const hasTrash = TRASH_KEYWORDS.some(t => n.includes(t));
+    const askedForTrash = TRASH_KEYWORDS.some(t => k.includes(t));
+    if (hasTrash && !askedForTrash) return false;
+
+    const words = k.split(' ');
+    return words.every(word => n.includes(word));
+}
+
+function rankProducts(products, keyword) {
+    return products.map(p => {
+        let score = 0;
+        const nameUpper = p.name.toUpperCase();
+        
+        // 1. Bônus por Promoção (Desconto Real)
+        if (p.originalPrice && p.originalPrice > p.price) {
+            const discountPercent = ((p.originalPrice - p.price) / p.originalPrice) * 100;
+            score += discountPercent; // Ex: 20% de desconto = +20 pontos
+        }
+
+        // 2. Bônus por Marcas Premium
+        if (PREMIUM_BRANDS.some(brand => nameUpper.includes(brand))) {
+            score += 50; // Grande bônus para marcas conhecidas
+        }
+
+        // 3. Penalidade leve por preço muito baixo (geralmente acessório/lixo)
+        if (p.price < 15 && !keyword.toUpperCase().includes('BARATO')) {
+            score -= 30;
+        }
+
+        return { ...p, score };
+    }).sort((a, b) => b.score - a.score);
 }
 
 // ===== API ENDPOINT =====
@@ -68,7 +99,7 @@ app.post('/api/analyze-link', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ success: false, error: 'Busca obrigatória' });
     const keyword = url.startsWith('http') ? 'Produto' : url;
-    console.log(`\n🚀 [Lab Root] Pesquisando: "${keyword}"`);
+    console.log(`\n🚀 [Lab Root] Pesquisando: "${keyword}" (Ranking Ativado)`);
     
     const platforms = [
         { name: 'Shopee', fn: searchShopee },
@@ -79,20 +110,28 @@ app.post('/api/analyze-link', async (req, res) => {
 
     try {
         const results = await Promise.allSettled(platforms.map(p => p.fn(keyword)));
-        const finalProducts = [];
+        let finalProducts = [];
         const stats = { shopee: 0, amazon: 0, mercadolivre: 0, shein: 0 };
 
         results.forEach((res, index) => {
-            const name = platforms[index].name;
+            const platformName = platforms[index].name.toLowerCase().replace(' ', '');
             if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
                 finalProducts.push(...res.value);
-                stats[name.toLowerCase().replace(' ', '')] = res.value.length;
+                stats[platformName] = res.value.length;
             }
         });
 
-        finalProducts.sort((a, b) => a.price - b.price);
-        res.json({ success: true, originalProduct: { title: keyword, image: null, platform: 'Search' }, comparison: finalProducts, stats });
+        // Aplicar Ranking Inteligente (Promoção + Marcas)
+        const rankedProducts = rankProducts(finalProducts, keyword);
+
+        res.json({ 
+            success: true, 
+            originalProduct: { title: keyword, image: null, platform: 'Search' }, 
+            comparison: rankedProducts, 
+            stats 
+        });
     } catch (e) {
+        console.error('❌ Erro na busca:', e.message);
         res.status(500).json({ success: false, error: e.message });
     }
 });
