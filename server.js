@@ -7,7 +7,7 @@ const crypto = require('crypto');
 require('dotenv').config(); // Carrega o .env da pasta atual
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = 3002;
 
 app.use(cors());
 app.use(express.json());
@@ -211,9 +211,23 @@ async function searchMercadoLivre(keyword) {
                 const prevCents = prevEl.find('.andes-money-amount__cents').text().replace(/[^0-9]/g, '') || '00';
                 if (prevWhole) originalPrice = parseFloat(`${prevWhole}.${prevCents.substring(0,2)}`);
             }
-            raw.push({ name, price, originalPrice: (originalPrice > price) ? originalPrice : null, image: $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src'), link: $el.find('a').first().attr('href'), source: 'Mercado Livre', sales: '🔥 Afiliado ML' });
+            raw.push({ name, price, originalPrice: (originalPrice > price) ? originalPrice : null, image: $el.find('img').first().attr('data-src') || $el.find('img').first().attr('src'), link: $el.find('a').first().attr('href'), source: 'Mercado Livre' });
         });
-        return raw.map(p => ({ ...p, link: p.link.startsWith('http') ? p.link : 'https://www.mercadolivre.com.br' + p.link }));
+        
+        const list = raw.map(p => ({ ...p, link: p.link.startsWith('http') ? p.link : 'https://www.mercadolivre.com.br' + p.link })).slice(0, 5);
+        
+        return await Promise.all(list.map(async (p) => {
+            let finalLink = p.link;
+            try {
+                const csrfToken = ML_CREDENTIALS.csrfToken || (ML_CREDENTIALS.cookie.match(/_csrf=([^;]+)/) || [])[1] || '';
+                const mlRes = await axios.post('https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink', 
+                    { urls: [p.link], tag: ML_CREDENTIALS.tag }, 
+                    { headers: { 'cookie': ML_CREDENTIALS.cookie, 'x-csrf-token': csrfToken, 'User-Agent': USER_AGENTS.desktop, 'origin': 'https://www.mercadolivre.com.br', 'referer': 'https://www.mercadolivre.com.br/afiliados/linkbuilder' }, timeout: 5000 }
+                );
+                if (mlRes.data?.urls?.[0]?.created) finalLink = mlRes.data.urls[0].short_url || mlRes.data.urls[0].url;
+            } catch (e) {}
+            return { ...p, link: finalLink, sales: finalLink.includes('mercadolivre.com.br/afiliados/') || finalLink.length < 60 ? '💎 ML Trackeado' : '🔥 Afiliado ML' };
+        }));
     } catch (e) { return []; }
 }
 
