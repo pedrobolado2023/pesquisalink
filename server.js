@@ -219,14 +219,14 @@ async function searchMercadoLivre(keyword) {
         return await Promise.all(list.map(async (p) => {
             let finalLink = p.link;
             try {
-                const csrfToken = ML_CREDENTIALS.csrfToken || (ML_CREDENTIALS.cookie.match(/_csrf=([^;]+)/) || [])[1] || '';
+                const csrfToken = (ML_CREDENTIALS.cookie.match(/_csrf=([^;]+)/) || [])[1] || '';
                 const mlRes = await axios.post('https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink', 
                     { urls: [p.link], tag: ML_CREDENTIALS.tag }, 
-                    { headers: { 'cookie': ML_CREDENTIALS.cookie, 'x-csrf-token': csrfToken, 'User-Agent': USER_AGENTS.desktop, 'origin': 'https://www.mercadolivre.com.br', 'referer': 'https://www.mercadolivre.com.br/afiliados/linkbuilder' }, timeout: 5000 }
+                    { headers: { 'cookie': ML_CREDENTIALS.cookie, 'x-csrf-token': csrfToken, 'User-Agent': USER_AGENTS.desktop, 'origin': 'https://www.mercadolivre.com.br' }, timeout: 5000 }
                 );
                 if (mlRes.data?.urls?.[0]?.created) finalLink = mlRes.data.urls[0].short_url || mlRes.data.urls[0].url;
             } catch (e) {}
-            return { ...p, link: finalLink, sales: finalLink.includes('mercadolivre.com.br/afiliados/') || finalLink.length < 60 ? '💎 ML Trackeado' : '🔥 Afiliado ML' };
+            return { ...p, link: finalLink, sales: finalLink.includes('mercadolivre.com.br/afiliados/') || finalLink.length < 70 ? '💎 ML Afiliado' : '🔥 Oferta ML' };
         }));
     } catch (e) { return []; }
 }
@@ -268,35 +268,27 @@ async function searchShein(keyword) {
 async function processSheinResults(data, keyword, headers) {
     const list = (data?.info?.goodsList || []).filter(p => isRelevantProduct(p.goodsName, keyword)).slice(0, 5);
     
-    // Converte os links para links de afiliado em paralelo (limite de 5 para performance)
     const converted = await Promise.all(list.map(async (p) => {
         let finalLink = `https://m.shein.com/br/product-p-${p.goodsId}.html`;
         try {
             const genRes = await axios.post('https://m.shein.com/br/affiliate/api/share/link/realtime/generate', {
-                "abtVersion": 1, 
-                "activityId": 20, 
-                "goodsId": p.goodsId, 
-                "type": 2, 
-                "language": "pt-br", 
-                "uid": String(SHEIN_CREDENTIALS.memberId),
-                "translations": "{\"SHEIN_KEY_H5_48336\":\"Pesquise meu código no app da SHEIN\",\"SHEIN_KEY_H5_34201\":\"vendido\",\"SHEIN_KEY_H5_48335\":\"Descontos e promoções estão sujeitos a alterações.\",\"SHEIN_KEY_H5_48674\":\"Envio Rápido\",\"SHEIN_KEY_H5_48337\":\"Minhas escolhas para você\",\"SHEIN_KEY_H5_48338\":\"Pesquise {0} no app da SHEIN\"}",
-                "ogpParamRequest": {
-                    "orgImgUrl": p.mainImage,
-                    "shareTitle": p.goodsName
-                },
-                "goodsPicRequestList": [{ 
-                    "goodsId": p.goodsId, 
-                    "goodsName": p.goodsName, 
-                    "mainImage": p.mainImage, 
-                    "salesPriceText": `R$${p.salesPrice}`, 
-                    "siteUid": "mbr" 
-                }]
-            }, { headers, timeout: 5000 });
+                "abtVersion": 1, "activityId": 20, "goodsId": p.goodsId, "type": 2, "language": "pt-br", "uid": String(SHEIN_CREDENTIALS.memberId),
+                "translations": "{\"SHEIN_KEY_H5_48336\":\"Pesquise meu código no app da SHEIN\",\"SHEIN_KEY_H5_34201\":\"vendido\"}",
+                "ogpParamRequest": { "orgImgUrl": p.mainImage, "shareTitle": p.goodsName },
+                "goodsPicRequestList": [{ "goodsId": p.goodsId, "goodsName": p.goodsName, "mainImage": p.mainImage, "salesPriceText": `R$${p.salesPrice}`, "siteUid": "mbr" }]
+            }, { headers, timeout: 8000 });
             
             if (genRes.data?.info?.shareLink) {
                 finalLink = genRes.data.info.shareLink;
+            } else if (genRes.data?.info?.list?.[0]?.shareLink) {
+                finalLink = genRes.data.info.list[0].shareLink;
+            } else {
+                // Fallback trackeado se a geração falhar
+                finalLink += `?aff_id=${SHEIN_CREDENTIALS.memberId}&src_identifier=onelink`;
             }
-        } catch (err) { }
+        } catch (err) { 
+            finalLink += `?aff_id=${SHEIN_CREDENTIALS.memberId}&src_identifier=onelink`;
+        }
 
         return {
             name: p.goodsName, 
@@ -305,7 +297,7 @@ async function processSheinResults(data, keyword, headers) {
             image: p.mainImage?.startsWith('//') ? 'https:' + p.mainImage : p.mainImage, 
             link: finalLink, 
             source: 'Shein', 
-            sales: finalLink.includes('shein.top') ? '💎 Link Trackeado' : '✨ Onelink'
+            sales: (finalLink.includes('shein.top') || finalLink.includes('aff_id=')) ? '💎 Shein Afiliado' : '✨ Oferta Shein'
         };
     }));
 
