@@ -70,19 +70,20 @@ function isRelevantProduct(name, keyword) {
 }
 
 function rankProducts(products, keyword) {
-    return products.map(p => {
+    const seen = new Set();
+    const ranked = products.map(p => {
         let score = 0;
         const nameUpper = p.name.toUpperCase();
         
         // 1. Bônus por Promoção (Desconto Real)
         if (p.originalPrice && p.originalPrice > p.price) {
             const discountPercent = ((p.originalPrice - p.price) / p.originalPrice) * 100;
-            score += discountPercent; // Ex: 20% de desconto = +20 pontos
+            score += discountPercent; 
         }
 
         // 2. Bônus por Marcas Premium
         if (PREMIUM_BRANDS.some(brand => nameUpper.includes(brand))) {
-            score += 50; // Grande bônus para marcas conhecidas
+            score += 50; 
         }
 
         // 3. Penalidade leve por preço muito baixo (geralmente acessório/lixo)
@@ -92,6 +93,14 @@ function rankProducts(products, keyword) {
 
         return { ...p, score };
     }).sort((a, b) => b.score - a.score);
+
+    // Remover duplicatas baseadas no nome (limpo) e preço
+    return ranked.filter(p => {
+        const key = `${p.name.substring(0, 30).toUpperCase()}_${p.price}_${p.source}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
 }
 
 // ===== API ENDPOINT =====
