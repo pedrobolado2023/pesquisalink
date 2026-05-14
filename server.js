@@ -7,7 +7,8 @@ const crypto = require('crypto');
 require('dotenv').config(); // Carrega o .env da pasta atual
 
 const app = express();
-const PORT = 3002;
+const PORT = process.env.PORT || 3000;
+console.log(`📡 Porta: ${PORT}`);
 
 app.use(cors());
 app.use(express.json());
